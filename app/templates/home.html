@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Chào mừng!</h1>
+    <p>Bạn đã đăng nhập thành công. Bây giờ bạn có thể thực hiện một số tác vụ.</p>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+    <div class="button-container">
+        <a class="btn" href="{{ url_for('dotask') }}">Tạo và Tải File</a>
+    </div>
+{% endblock %}

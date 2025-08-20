@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Ứng dụng Google Drive</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 1rem;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin: 20px 0;
+        }
+        .flashes li {
+            padding: 10px;
+            border-radius: 5px;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        .flashes .success { background-color: #28a745; }
+        .flashes .danger { background-color: #dc3545; }
+        .flashes .info { background-color: #17a2b8; }
+        .button-container {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="{{ url_for('index') }}">Trang chủ</a> |
+                <a href="{{ url_for('home') }}">Trang chính</a>
+            </nav>
+        </header>
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+        <footer>
+            <p>&copy; 2024 Ứng dụng Google Drive API</p>
+        </footer>
+    </div>
+</body>
+</html>

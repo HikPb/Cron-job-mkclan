@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1>Chào mừng đến với ứng dụng quản lý file</h1>
+    <p>Vui lòng đăng nhập bằng tài khoản Google đã được cấp quyền.</p>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul class="flashes">
+            {% for category, message in messages %}
+                <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+
+    <div class="button-container">
+        {% if is_logged_in %}
+            <a class="btn" href="{{ url_for('home') }}">Trang chủ</a>
+            <a class="btn" href="{{ url_for('logout') }}">Đăng xuất</a>
+        {% else %}
+            <a class="btn" href="{{ url_for('auth') }}">Đăng nhập với Google</a>
+        {% endif %}
+    </div>
+{% endblock %}
