@@ -1,12 +1,13 @@
 from app import app
-from flask import render_template, redirect, url_for, session, request, flash
+from flask import render_template, redirect, url_for, session, request, g, flash
 from functools import wraps
+from app.services.drive_service import DriveService
+from app.services.api_service import *
 
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from google.auth.transport.requests import Request
 from werkzeug.exceptions import HTTPException
 import json
 import io
@@ -18,6 +19,7 @@ except (json.JSONDecodeError, TypeError):
     client_secret_json = None
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file",  'https://www.googleapis.com/auth/userinfo.email']
+CLAN_TAG = '%232QCV8UJ8Q'
 
 def login_required(f):
     @wraps(f)
@@ -43,6 +45,7 @@ def auth():
     )
     authorization_url, state = flow.authorization_url(
         access_type='offline',
+        prompt='consent',
         include_granted_scopes='true'
     )    
     session['state'] = state
@@ -110,9 +113,9 @@ def logout():
 def home():
     return render_template('home.html', title='Trang chủ')
 
-@app.route('/dotask')
+@app.route('/update-clan-info')
 @login_required
-def dotask():
+def update_clan_info():
     creds_data = session.get('credentials')
     if not creds_data:
         flash("Không tìm thấy thông tin xác thực.", "danger")
@@ -127,68 +130,145 @@ def dotask():
             'client_id': creds.client_id,
             'client_secret': creds.client_secret,
             'scopes': creds.scopes
-        }
-    
+        }  
     try:
-        # Xây dựng dịch vụ Google Drive API
-        drive_service = build('drive', 'v3', credentials=creds)
+        drive_service = DriveService(credentials=creds)
+        token = getCocApiToken()
+        if token == None:
+            flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
+            return redirect(url_for('home'))
+        clan_info = fetch_clan_info(token, CLAN_TAG)
+        if clan_info == None:
+            flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
+            return redirect(url_for('home'))
 
-        # Tạo nội dung cho tệp a.txt
-        file_content = "This is a test file created by the Flask app."
-        file_name = "a.txt"
-        
-        # Metadata cho tệp, bao gồm ID thư mục cha
-        file_metadata = {
-            'name': file_name,
-            'parents': [app.config['DRIVE_FOLDER_ID']]
-        }
-        
-        # Tải tệp lên Google Drive
-        media = MediaIoBaseUpload(io.BytesIO(file_content.encode('utf-8')),
-                                  mimetype='text/plain',
-                                  resumable=True)
-        
-        uploaded_file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id'
-        ).execute()
-        
-        flash(f"Đã tải thành công tệp {file_name} với ID: {uploaded_file.get('id')} lên Google Drive!", "success")
-        return redirect(url_for('home'))
-        
+        with open(app.config['CLAN_INFO_FILE_NAME'], 'w') as f:
+            json.dump(clan_info, f, indent=4)
+        uploaded_response = drive_service.upload_json_to_drive(app.config['CLAN_INFO_FILE_NAME'], app.config['DRIVE_FOLDER_ID'], num_backups_to_keep=1)
+        if uploaded_response.status == "error":
+            flash(f"File {app.config['CLAN_INFO_FILE_NAME']}: Upload thất bại! Error: {uploaded_response.message}", "danger")
+        flash(f"Đã tải thành công tệp {app.config['CLAN_INFO_FILE_NAME']} với ID: {uploaded_response.id} lên Google Drive!", "success")
+        return redirect(url_for('home'))    
     except Exception as e:
         flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
         return redirect(url_for('home'))
 
-@app.route('/cron_task')
-def cron_task():
-    secret_from_request = request.args.get('secret')
+@app.route('/update-warlog')
+@login_required
+def update_warlog():
+    creds_data = session.get('credentials')
+    if not creds_data:
+        flash("Không tìm thấy thông tin xác thực.", "danger")
+        return redirect(url_for('index'))      
+    creds = Credentials(**creds_data)
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        session['credentials'] = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        }  
+    try:
+        drive_service = DriveService(credentials=creds)
+        token = getCocApiToken()
+        if token == None:
+            flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
+            return redirect(url_for('home'))
+        warlog = fetch_war_log(token, CLAN_TAG, drive_service)
+        if warlog == None:
+            flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
+            return redirect(url_for('home'))
+
+        with open(app.config['WARLOG_FILE_NAME'], 'w') as f:
+            json.dump(warlog, f, indent=4)
+        uploaded_response = drive_service.upload_json_to_drive(app.config['WARLOG_FILE_NAME'], app.config['DRIVE_FOLDER_ID'], num_backups_to_keep=1)
+        if uploaded_response.status == "error":
+            flash(f"File {app.config['WARLOG_FILE_NAME']}: Upload thất bại! Error: {uploaded_response.message}", "danger")
+        flash(f"Đã tải thành công tệp {app.config['WARLOG_FILE_NAME']} với ID: {uploaded_response.id} lên Google Drive!", "success")
+        return redirect(url_for('home'))    
+    except Exception as e:
+        flash(f"Lỗi khi tải tệp lên Google Drive: {str(e)}", "danger")
+        return redirect(url_for('home'))
+
+@app.route('/api/update-clan-info')
+def update_clan_info_api():
+    secret_from_request = request.args.get('key')
+    print(f"Key: {secret_from_request} - {app.config['CRON_SECRET_KEY']}")
     if secret_from_request != app.config['CRON_SECRET_KEY']:
         print("Unauthorized access. Secret key does not match.")
-        return {"message": "Unauthorized access"}, 403
+        return {"status": "error", "message": "Unauthorized access"}, 403
     try:
         with open('token.json', 'r') as f:
             credentials_data = json.load(f)
     except FileNotFoundError:
         print("token.json not found. Please log in first to create the file.")
-        return {"message": "Token file not found. Please log in first."}, 401
+        return {"status": "error", "message": "Token file not found. Please log in first."}, 401
     credentials = Credentials(**credentials_data)
-    if not credentials.valid:
-        if credentials.refresh_token:
-            credentials.refresh(request.url)
-            with open('token.json', 'w') as f:
-                json.dump({
-                    'token': credentials.token,
-                    'refresh_token': credentials.refresh_token,
-                    'token_uri': credentials.token_uri,
-                    'client_id': credentials.client_id,
-                    'client_secret': credentials.client_secret,
-                    'scopes': credentials.scopes
-                }, f)
-        else:
-            print("Refresh token is missing or invalid.")
-            return {"message": "Refresh token is missing. Please re-authenticate."}, 401
-    
-   
-    return {"message": "Task executed successfully."}, 200
+    if credentials.expired and credentials.refresh_token:
+        credentials.refresh(request.url)
+        with open('token.json', 'w') as f:
+            json.dump({
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }, f)
+    try:
+        drive_service = DriveService(credentials=credentials)
+        token = getCocApiToken()
+        if token == None:
+            return {"status": "error" ,"message": "Coc API Token is None"}
+        clan_info = fetch_clan_info(token, CLAN_TAG)
+        if clan_info == None:
+            return {"status": "error" ,"message": "Data is None"}
+        with open(app.config['CLAN_INFO_FILE_NAME'], 'w') as f:
+            json.dump(clan_info, f, indent=4)
+        uploaded_response = drive_service.upload_json_to_drive(app.config['CLAN_INFO_FILE_NAME'], app.config['DRIVE_FOLDER_ID'], num_backups_to_keep=1)
+        return uploaded_response, 200    
+    except Exception as e:
+        return {"status": "error" ,"message": e}
+
+@app.route('/api/update-war-log')
+def update_war_log_api():
+    secret_from_request = request.args.get('key')
+    if secret_from_request != app.config['CRON_SECRET_KEY']:
+        print("Unauthorized access. Secret key does not match.")
+        return {"status": "error", "message": "Unauthorized access"}, 403
+    try:
+        with open('token.json', 'r') as f:
+            credentials_data = json.load(f)
+    except FileNotFoundError:
+        print("token.json not found. Please log in first to create the file.")
+        return {"status": "error", "message": "Token file not found. Please log in first."}, 401
+    credentials = Credentials(**credentials_data)
+    if credentials.expired and credentials.refresh_token:
+        credentials.refresh(request.url)
+        with open('token.json', 'w') as f:
+            json.dump({
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }, f)
+    try:
+        drive_service = DriveService(credentials=credentials)
+        token = getCocApiToken()
+        if token == None:
+            return {"status": "error" ,"message": "Coc API Token is None"}
+        warlog = fetch_war_log(token, CLAN_TAG, drive_service)
+        if warlog == None:
+            return {"status": "error" ,"message": "Data is None"}
+        with open(app.config['WARLOG_FILE_NAME'], 'w') as f:
+            json.dump(warlog, f, indent=4)
+        uploaded_response = drive_service.upload_json_to_drive(app.config['WARLOG_FILE_NAME'], app.config['DRIVE_FOLDER_ID'], num_backups_to_keep=1)
+        return uploaded_response, 200    
+    except Exception as e:
+        return {"status": "error" ,"message": e}
+

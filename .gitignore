@@ -43,3 +43,6 @@ build/
 instance/
 
 client_secret.json
+clan_info.json
+war_log.json
+token.json
