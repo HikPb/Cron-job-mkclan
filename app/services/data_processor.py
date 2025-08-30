@@ -1,6 +1,4 @@
 import json
-import datetime
-from .api_service import fetch_data
 from .. import app
 from collections import defaultdict
 
@@ -239,8 +237,7 @@ def process_wl_data(season, data, drive_service):
         
     # 3. Chuyển đổi dữ liệu và chuẩn bị tải lên Drive
     mk_players_rank = []
-    for tag in join_war_player:
-        stats = mk_players_stats[tag]
+    for tag, stats in mk_players_stats.items():
         mk_players_rank.append({
             "tag": tag,
             "atkStars": stats["atkStars"],
@@ -286,12 +283,12 @@ def process_wl_data(season, data, drive_service):
 
     return {"overall": overall_res, "round": rounds_res, "player": players_res}
     
-def process_wldata_and_upload(drive_service):
-    current_time = datetime.datetime.now()
-    season = current_time.strftime('%Y-%m')
-    api_url = "https://api.clashofstats.com/clans/2QCV8UJ8Q/cwl/seasons/" + season
-    data = fetch_data(api_url)
-    if "error" in data:
-        return data
-    else:
-        return process_wl_data(season, data.get("data"), drive_service)
+def deep_merge(target, source):
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            target[key] = deep_merge(target[key], value)
+        elif key in target and isinstance(target[key], list) and isinstance(value, list):
+            target[key].extend(value)
+        else:
+            target[key] = value
+    return target
