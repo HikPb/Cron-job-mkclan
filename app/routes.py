@@ -2,7 +2,7 @@ from . import app
 from flask import render_template, redirect, url_for, session, request, flash
 from functools import wraps
 from .services.drive_service import DriveService
-from .services.api_service import getCocApiToken, fetch_clan_info, fetch_war_log, process_wldata_and_upload
+from .services.api_service import getCocApiToken, fetch_clan_info, fetch_war_log, process_wldata_and_upload, get_token
 
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
@@ -51,12 +51,19 @@ def auth():
     session['state'] = state
     return redirect(authorization_url)
 
+import json
+from google.auth.exceptions import RefreshError
+from google.oauth2.credentials import Credentials
+# ... các imports khác
+
 @app.route('/auth/callback')
 def auth_callback():
     state = session.get('state')
+    # Sau khi kiểm tra, nên xóa state
     if not state or request.args.get('state') != state:
         flash("Trạng thái không hợp lệ.", "danger")
         return redirect(url_for('index'))
+    session.pop('state', None) # Xóa state để tránh sử dụng lại
 
     flow = Flow.from_client_config(
         client_secret_json,
@@ -67,6 +74,7 @@ def auth_callback():
     try:
         flow.fetch_token(authorization_response=request.url)        
         credentials = flow.credentials
+        
         user_info_service = build('oauth2', 'v2', credentials=credentials)
         user_info = user_info_service.userinfo().get().execute()
         user_email = user_info.get('email')
@@ -76,24 +84,16 @@ def auth_callback():
             session.clear()
             return redirect(url_for('index'))
 
-        # Lưu thông tin xác thực vào session (backend)
-        session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-        
-        with open('token.json', 'w') as f:
-            json.dump(session['credentials'], f)
+        session['credentials'] = credentials.to_json()
+    
+        drive_service = DriveService(credentials=credentials)
+        drive_service.upload_string_to_drive(session['credentials'], 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
 
         flash("Đăng nhập thành công!", "success")
         return redirect(url_for('home'))
         
-    except HTTPException as e:
-        flash(f"Lỗi khi xác thực: {e.description}", "danger")
+    except RefreshError as e:
+        flash("Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.", "danger")
         session.clear()
         return redirect(url_for('index'))
     except Exception as e:
@@ -143,18 +143,11 @@ async def update_clan_info():
     creds_data = session.get('credentials')
     if not creds_data:
         flash("Không tìm thấy thông tin xác thực.", "danger")
-        return redirect(url_for('index'))      
-    creds = Credentials(**creds_data)
+        return redirect(url_for('index'))
+    creds = Credentials.from_authorized_user_info(json.loads(creds_data), SCOPES)      
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        session['credentials'] = {
-            'token': creds.token,
-            'refresh_token': creds.refresh_token,
-            'token_uri': creds.token_uri,
-            'client_id': creds.client_id,
-            'client_secret': creds.client_secret,
-            'scopes': creds.scopes
-        }  
+        session['credentials'] = creds.to_json()
     uploaded_res = await process_data_and_upload('clan_info', creds)
     if "error" in uploaded_res:
         flash(f"Upload thất bại! Error: {uploaded_res["error"]}", "danger")
@@ -169,17 +162,10 @@ async def update_warlog():
     if not creds_data:
         flash("Không tìm thấy thông tin xác thực.", "danger")
         return redirect(url_for('index'))      
-    creds = Credentials(**creds_data)
+    creds = Credentials.from_authorized_user_info(json.loads(creds_data), SCOPES) 
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        session['credentials'] = {
-            'token': creds.token,
-            'refresh_token': creds.refresh_token,
-            'token_uri': creds.token_uri,
-            'client_id': creds.client_id,
-            'client_secret': creds.client_secret,
-            'scopes': creds.scopes
-        }  
+        session['credentials'] = creds.to_json()
     uploaded_res = await process_data_and_upload('war_log', creds)
     if "error" in uploaded_res:
         flash(f"Upload thất bại! Error: {uploaded_res["error"]}", "danger")
@@ -191,58 +177,34 @@ async def update_warlog():
 async def update_clan_info_api():
     secret_from_request = request.args.get('key')
     if secret_from_request != app.config['CRON_SECRET_KEY']:
-        print("Unauthorized access. Secret key does not match.")
-        return {"status": "error", "message": "Unauthorized access"}, 403
-    try:
-        with open('token.json', 'r') as f:
-            credentials_data = json.load(f)
-    except FileNotFoundError:
-        app.logger.error("token.json not found. Please log in first to create the file.")
-        return {"error": "Token file not found. Please log in first."}, 401
-    credentials = Credentials(**credentials_data)
+        return {"error":"Unauthorized access"}, 403
+    
+    cred_data = get_token()
+    if "error" in cred_data:
+        return {"error": cred_data.get('error')}
+    credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(request.url)
-        with open('token.json', 'w') as f:
-            json.dump({
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }, f)
+        drive_service = DriveService(credentials=credentials)
+        drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
 
-    start_time = time.time()
     uploaded_res = await process_data_and_upload('clan_info', credentials)
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Hàm thực thi trong {elapsed_time:.4f} giây.")
     return uploaded_res
 
 @app.route('/api/update-war-log')
 async def update_war_log_api():
     secret_from_request = request.args.get('key')
     if secret_from_request != app.config['CRON_SECRET_KEY']:
-        print("Unauthorized access. Secret key does not match.")
-        return {"status": "error", "message": "Unauthorized access"}, 403
-    try:
-        with open('token.json', 'r') as f:
-            credentials_data = json.load(f)
-    except FileNotFoundError:
-        print("token.json not found. Please log in first to create the file.")
-        return {"status": "error", "message": "Token file not found. Please log in first."}, 401
-    credentials = Credentials(**credentials_data)
+        return {"error":"Unauthorized access"}, 403
+    
+    cred_data = get_token()
+    if "error" in cred_data:
+        return {"error": cred_data.get('error')}
+    credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(request.url)
-        with open('token.json', 'w') as f:
-            json.dump({
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }, f)
+        drive_service = DriveService(credentials=credentials)
+        drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
     uploaded_res = await process_data_and_upload('war_log', credentials)
     return uploaded_res
 
@@ -250,26 +212,16 @@ async def update_war_log_api():
 def upload_current_war_league_api():
     secret_from_request = request.args.get('key')
     if secret_from_request != app.config['CRON_SECRET_KEY']:
-        print("Unauthorized access. Secret key does not match.")
-        return {"status": "error", "message": "Unauthorized access"}, 403
-    try:
-        with open('token.json', 'r') as f:
-            credentials_data = json.load(f)
-    except FileNotFoundError:
-        print("token.json not found. Please log in first to create the file.")
-        return {"status": "error", "message": "Token file not found. Please log in first."}, 401
-    credentials = Credentials(**credentials_data)
+        return {"error":"Unauthorized access"}, 403
+    
+    cred_data = get_token()
+    if "error" in cred_data:
+        return {"error": cred_data.get('error')}
+    credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(request.url)
-        with open('token.json', 'w') as f:
-            json.dump({
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }, f)
+        drive_service = DriveService(credentials=credentials)
+        drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
     drive_service = DriveService(credentials=credentials)
     uploaded_res = process_wldata_and_upload(drive_service)
     return uploaded_res

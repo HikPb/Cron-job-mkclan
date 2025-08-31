@@ -186,3 +186,16 @@ def process_wldata_and_upload(drive_service):
     except Exception as e:
         app.logger.error(f"An unexpected error occurred: {e}")
         return {"error": f"An unexpected error occurred: {e}"}
+    
+def get_token():
+    try:
+        response = requests.get(url=app.config.get('API_URL'))
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Error fetching data from GAS Api: {e}")
+        return {"error": f"Error fetching data from GAS Api: {e}"}
+    except Exception as e:
+        app.logger.error(f"An unexpected error occurred: {e}")
+        return {"error": f"An unexpected error occurred: {e}"}    

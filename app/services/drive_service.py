@@ -91,17 +91,25 @@ class DriveService:
             existing_files = results.get('files', [])
 
             if existing_files:
-                existing_file = existing_files[0]
-                existing_file_id = existing_file['id']
+                existing_file_id = existing_files[0]['id']
 
+                # 2. Xử lý tệp hiện có: sao lưu hoặc xóa
                 if num_backups_to_keep > 0:
                     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                     backup_name = f"{base_file_name}_backup_{timestamp}{file_extension}"
-                    self.service.files().update(fileId=existing_file_id, body={'name': backup_name}).execute()
-                else:
+                    
+                    # Cập nhật tên và thêm metadata is_backup: true cho tệp
+                    metadata_body = {
+                        'name': backup_name,
+                        'properties': {'is_backup': 'true'}
+                    }
+                    self.service.files().update(fileId=existing_file_id, body=metadata_body).execute()
+                    app.logger.info(f"Existing file {file_name} renamed to backup {backup_name} and marked as backup.")
+                else: # num_backups_to_keep is 0
                     self.service.files().delete(fileId=existing_file_id).execute()
+                    app.logger.info(f"Existing file {file_name} deleted as per backup policy.")
             
-            # 2. Tải lên tệp mới từ đối tượng BytesIO
+            # 3. Tải lên tệp mới
             data_bytes = data_str.encode('utf-8')
             data_io = io.BytesIO(data_bytes)
             file_metadata = {
@@ -113,18 +121,25 @@ class DriveService:
             uploaded_file_id = file.get('id')
             app.logger.info(f"New file {file_name} (ID: {uploaded_file_id}) uploaded from string to Drive folder.")
 
-            # 3. Xóa các bản sao lưu cũ
-            if num_backups_to_keep >= 0:
-                backup_query = f"name contains '{backup_pattern}' and '{folder_id}' in parents and trashed=false"
+            # 4. Xóa các bản sao lưu cũ dựa trên cả metadata và tên tệp
+            if num_backups_to_keep > 0: # Chỉ dọn dẹp nếu có chính sách sao lưu
+                backup_query = (
+                    f"properties has {{key='is_backup' and value='true'}} "
+                    f"and name contains '{backup_pattern}' "
+                    f"and '{folder_id}' in parents and trashed=false"
+                )
                 backup_results = self.service.files().list(q=backup_query,
                                                             spaces='drive',
                                                             fields='files(id, name, createdTime)').execute()
                 backup_files = backup_results.get('files', [])
+                
                 if len(backup_files) > num_backups_to_keep:
+                    # Sắp xếp các bản sao lưu theo thời gian tạo
                     backup_files.sort(key=lambda x: x['createdTime'])
                     files_to_delete = backup_files[:-num_backups_to_keep]
                     for old_file in files_to_delete:
                         self.service.files().delete(fileId=old_file['id']).execute()
+                        app.logger.info(f"Deleted old backup file with ID: {old_file['id']}.")
 
         except Exception as e:
             app.logger.error(f"Error processing and uploading string to Drive: {e}")

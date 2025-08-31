@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-
 load_dotenv()
 
 # Thiết lập các biến môi trường cho OAuthlib
@@ -36,5 +35,6 @@ app.config['EMAIL'] = os.environ.get('COC_EMAIL')
 app.config['PASSWORD'] = os.environ.get('COC_PASSWORD')
 app.config['CLAN_INFO_FILE_NAME'] = os.environ.get('CLAN_INFO_FILE_NAME')
 app.config['WARLOG_FILE_NAME'] = os.environ.get('WARLOG_FILE_NAME')
+app.config['API_URL'] = os.environ.get('API_URL')
 
 from app import routes
