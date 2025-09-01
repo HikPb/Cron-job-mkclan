@@ -184,7 +184,7 @@ async def update_clan_info_api():
         return {"error": cred_data.get('error')}
     credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(request.url)
+        credentials.refresh(Request())
         drive_service = DriveService(credentials=credentials)
         drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
 
@@ -202,7 +202,7 @@ async def update_war_log_api():
         return {"error": cred_data.get('error')}
     credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(request.url)
+        credentials.refresh(Request())
         drive_service = DriveService(credentials=credentials)
         drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
     uploaded_res = await process_data_and_upload('war_log', credentials)
@@ -219,7 +219,7 @@ def upload_current_war_league_api():
         return {"error": cred_data.get('error')}
     credentials = Credentials.from_authorized_user_info(cred_data.get('data'), SCOPES)
     if credentials.expired and credentials.refresh_token:
-        credentials.refresh(request.url)
+        credentials.refresh(Request())
         drive_service = DriveService(credentials=credentials)
         drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
     drive_service = DriveService(credentials=credentials)
