@@ -160,7 +160,7 @@ async def fetch_war_log(token, clan_tag, drive_service):
         except Exception as e:
             app.logger.error(f"Could not sort warlogs: {e}")
 
-        return {"data": final_warlog_list}
+        return {"data": final_warlog_list, "last50": new_warlogs}
 
 def process_wldata_and_upload(drive_service):
     current_time = datetime.datetime.now()

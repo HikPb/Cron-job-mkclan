@@ -124,6 +124,8 @@ async def process_data_and_upload(data_type, credentials):
             file_name = app.config['CLAN_INFO_FILE_NAME']
         elif data_type == 'war_log':
             data_res = await fetch_war_log(coc_token_res["data"], CLAN_TAG, drive_service)
+            wl_last50 = json.dumps(data_res["last50"], indent=4)
+            drive_service.upload_string_to_drive(wl_last50, "war_log_50.json", app.config['DRIVE_FOLDER_ID'], num_backups_to_keep=0)
             file_name = app.config['WARLOG_FILE_NAME']
         else:
             return {"error": "Invalid data type"}
