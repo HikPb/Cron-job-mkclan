@@ -38,6 +38,7 @@ build/
 # Test reports
 .pytest_cache/
 .coverage
+.python-version
 
 # Flask-specific
 instance/
@@ -46,3 +47,5 @@ client_secret.json
 clan_info.json
 war_log.json
 token.json
+
+app.log

@@ -3,8 +3,8 @@ import json
 import datetime
 import asyncio
 import aiohttp
-import requests
 import urllib.parse
+from curl_cffi import requests
 from .data_processor import process_wl_data, deep_merge
 
 MEMBER_EXCLUDED_KEYS = ['playerHouse', 'clan', 'achievements', 'labels', 'troops', 'heroes', 'heroEquipment', 'spells']
@@ -176,7 +176,12 @@ def process_wldata_and_upload(drive_service):
     
     try:
         api_url = "https://api.clashofstats.com/clans/2QCV8UJ8Q/cwl/seasons/" + season
-        response = requests.get(url=api_url)
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        response = requests.get(url=api_url, headers=headers, impersonate="chrome110")
         response.raise_for_status()
         data = response.json()
         return process_wl_data(season, data, drive_service)
