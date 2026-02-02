@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from werkzeug.exceptions import HTTPException
 import json
+import re
 import time
 
 try:
@@ -210,12 +211,15 @@ async def update_war_log_api():
     uploaded_res = await process_data_and_upload('war_log', credentials)
     return uploaded_res
 
-@app.route('/api/upload-current-war-league')
-def upload_current_war_league_api():
+@app.route('/api/upload-war-league')
+def upload_war_league_api():
     secret_from_request = request.args.get('key')
     if secret_from_request != app.config['CRON_SECRET_KEY']:
         return {"error":"Unauthorized access"}, 403
     
+    season_from_request = request.args.get('season')
+    if season_from_request and not re.match(r"^\d{4}-\d{2}$", str(season_from_request)):
+        return {"error":"The URL format is incorrect, please check it."}, 200
     cred_data = get_token()
     if "error" in cred_data:
         return {"error": cred_data.get('error')}
@@ -225,5 +229,5 @@ def upload_current_war_league_api():
         drive_service = DriveService(credentials=credentials)
         drive_service.upload_string_to_drive(credentials.to_json() , 'token.json', app.config.get('DRIVE_FOLDER_ID'), num_backups_to_keep=0)
     drive_service = DriveService(credentials=credentials)
-    uploaded_res = process_wldata_and_upload(drive_service)
+    uploaded_res = process_wldata_and_upload(drive_service, season_from_request)
     return uploaded_res

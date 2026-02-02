@@ -15,21 +15,22 @@ def handle_rounds_clan_player(memberList):
 
     for member in memberList:
         try:
-            newMember = {
-                'tag': member.get('tag'),
-                'mapPosition': member.get('mapPosition')
-            }
-            if 'attack' in member and member['attack'] is not None:
-                newMember['atkTag'] = member['attack'].get('defenderTag')
-                newMember['atkStars'] = member['attack'].get('stars')
-                newMember['atkDesPercent'] = member['attack'].get('destructionPercentage')
+            if "tag" in member:
+                newMember = {
+                    'tag': member.get('tag'),
+                    'mapPosition': member.get('mapPosition')
+                }
+                if 'attack' in member and member['attack'] is not None:
+                    newMember['atkTag'] = member['attack'].get('defenderTag')
+                    newMember['atkStars'] = member['attack'].get('stars')
+                    newMember['atkDesPercent'] = member['attack'].get('destructionPercentage')
 
-            if 'bestOpponentAttack' in member and member['bestOpponentAttack'] is not None:
-                newMember['defTag'] = member['bestOpponentAttack'].get('attackerTag')
-                newMember['defStars'] = member['bestOpponentAttack'].get('stars')
-                newMember['defDesPercent'] = member['bestOpponentAttack'].get('destructionPercentage')
+                if 'bestOpponentAttack' in member and member['bestOpponentAttack'] is not None:
+                    newMember['defTag'] = member['bestOpponentAttack'].get('attackerTag')
+                    newMember['defStars'] = member['bestOpponentAttack'].get('stars')
+                    newMember['defDesPercent'] = member['bestOpponentAttack'].get('destructionPercentage')
 
-            listMember.append(newMember)
+                listMember.append(newMember)
         except (KeyError, TypeError) as e:
             app.logger.error(f"Error processing member data: {e} in member: {member}")
             continue
@@ -43,22 +44,36 @@ def get_players(data):
     Trích xuất thông tin người chơi (tag, name, townHallLevel) từ dữ liệu API.
     """
     allplayer = {}
-    if not isinstance(data, dict) or 'clans' not in data or not isinstance(data['clans'], list):
-        app.logger.warning("Warning: Invalid data structure for getting players.")
+    if not isinstance(data, dict):
         return allplayer
-    try:
-        for clan in data.get('clans', []):
-            for member in clan.get('members', []):
-                if 'tag' in member:
-                    allplayer[member['tag']] = {
-                        key: value for key, value in member.items() if key in ['name', 'townHallLevel']
-                    }
-                else:
-                    app.logger.warning(f"Warning: Member without a tag found in clan: {clan.get('tag')}")
-    except (KeyError, TypeError) as e:
-        app.logger.error(f"Error processing clan or member data in get_players: {e}")
-    except Exception as e:
-        app.logger.error(f"An unexpected error occurred in get_players: {e}")
+        
+    clans = data.get('clans')
+    if not isinstance(clans, list):
+        app.logger.warning("Warning: 'clans' is missing or not a list.")
+        return allplayer
+
+    for clan in clans:
+        if not isinstance(clan, dict):
+            continue
+            
+        members = clan.get('members') or []
+        if not isinstance(members, list):
+            continue
+
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+                
+            tag = member.get('tag')
+            if tag:
+                allplayer[tag] = {
+                    "name": member.get('name'),
+                    "townHallLevel": member.get('townHallLevel')
+                }
+            else:
+                clan_tag = clan.get('tag', 'Unknown')
+                app.logger.warning(f"Warning: Member without a tag found in clan: {clan_tag}")
+                
     return allplayer
 
 def get_clans(data):
@@ -66,85 +81,87 @@ def get_clans(data):
     Trích xuất thông tin clan (tag, name, level, badge) từ dữ liệu API.
     """
     allclans = {}
-    if not isinstance(data, dict) or 'clans' not in data or not isinstance(data['clans'], list):
-        app.logger.warning("Warning: Invalid data structure for getting clans.")
+
+    if not isinstance(data, dict):
         return allclans
-    try:
-        for clan in data.get('clans', []):
-            if 'tag' in clan:
-                allclans[clan['tag']] = {
-                    "name": clan.get('name'),
-                    "clanLevel": clan.get('clanLevel'),
-                    "badgeUrl" : clan.get('badgeUrls', {}).get('small'),
-                }
-            else:
-                app.logger.warning("Warning: Clan without a tag found.")
-    except (KeyError, TypeError) as e:
-        app.logger.error(f"Error processing clan data in get_clans: {e}")
-    except Exception as e:
-        app.logger.error(f"An unexpected error occurred in get_clans: {e}")
+        
+    clans_list = data.get('clans')
+    if not isinstance(clans_list, list):
+        app.logger.warning("Warning: 'clans' is missing or not a list.")
+        return allclans
+
+    for clan in clans_list:
+        if not isinstance(clan, dict):
+            continue
+            
+        tag = clan.get('tag')
+        if tag:
+            badge_urls = clan.get('badgeUrls') or {}
+            allclans[tag] = {
+                "name": clan.get('name'),
+                "clanLevel": clan.get('clanLevel'),
+                "badgeUrl": badge_urls.get('small'),
+            }
+        else:
+            app.logger.warning("Warning: Clan without a tag found.")
     return allclans
 
 def get_all_clan_rounds(data):
-    """
-    Trích xuất kết quả từng vòng đấu của tất cả các clan.
-    """
     allrounds = []
-    if not isinstance(data, dict) or 'rounds' not in data or not isinstance(data['rounds'], list):
+
+    if not isinstance(data, dict):
+        return allrounds
+    
+    rounds = data.get('rounds')
+    if not isinstance(rounds, list):
         app.logger.warning("Warning: Invalid data structure for getting rounds.")
         return allrounds
-    try:
-        for round_data in data.get('rounds', []):
-            clans_in_round = {}
-            for war in round_data.get('wars', []):
-                try:
-                    clan1_tag = war.get('clan', {}).get('tag')
-                    clan2_tag = war.get('opponent', {}).get('tag')
-                    if clan1_tag and clan2_tag:
-                        clan1_info = war.get('clan', {})
-                        clan2_info = war.get('opponent', {})
-                        clan1 = {
-                            "tag": clan1_tag,
-                            "stars": clan1_info.get('stars'),
-                            "desPercent": clan1_info.get('destructionPercentage'),
-                            "attacks": clan1_info.get('attacks'),
-                            "isWinning": clan1_info.get('isWinning'),
-                            "opponentTag": clan2_tag,
-                            "opponentStars": clan2_info.get('stars'),
-                            "opponentDesPercent": clan2_info.get('destructionPercentage'),
-                            "opponentAttacks": clan2_info.get('attacks'),
-                            "teamSize": war.get('teamSize'),
-                            "members": handle_rounds_clan_player(clan1_info.get('members', []))
-                        }
-                        clan2 = {
-                            "tag": clan2_tag,
-                            "stars": clan2_info.get('stars'),
-                            "desPercent": clan2_info.get('destructionPercentage'),
-                            "attacks": clan2_info.get('attacks'),
-                            "isWinning": clan2_info.get('isWinning'),
-                            "opponentTag": clan1_tag,
-                            "opponentStars": clan1_info.get('stars'),
-                            "opponentDesPercent": clan1_info.get('destructionPercentage'),
-                            "opponentAttacks": clan1_info.get('attacks'),
-                            "teamSize": war.get('teamSize'),
-                            "members": handle_rounds_clan_player(clan2_info.get('members', []))
-                        }
-                        clans_in_round[clan1_tag] = clan1
-                        clans_in_round[clan2_tag] = clan2
-                    else:
-                        app.logger.warning(f"Warning: War data missing clan or opponent tag in round: {round_data}")
-                except (KeyError, TypeError) as e:
-                    app.logger.error(f"Error processing war data: {e} in war: {war}")
-                    continue
-                except Exception as e:
-                    app.logger.error(f"An unexpected error occurred while processing war data: {e} in war: {war}")
-                    continue
-            allrounds.append(clans_in_round)
-    except (KeyError, TypeError) as e:
-        app.logger.error(f"Error processing round data in get_rounds: {e}")
-    except Exception as e:
-        app.logger.error(f"An unexpected error occurred in get_rounds: {e}")
 
+    for round_data in rounds:
+        if not isinstance(round_data, dict):
+            continue
+            
+        clans_in_round = {}
+        wars = round_data.get('wars')
+        
+        if not isinstance(wars, list):
+            continue
+
+        for war in wars:
+            if not isinstance(war, dict):
+                continue
+            
+            try:
+                clan1_info = war.get('clan') or {}
+                clan2_info = war.get('opponent') or {}
+                clan1_tag = clan1_info.get('tag')
+                clan2_tag = clan2_info.get('tag')
+
+                if clan1_tag and clan2_tag:
+                    def build_clan_dict(current, opponent, opp_tag):
+                        return {
+                            "tag": current.get('tag'),
+                            "stars": current.get('stars'),
+                            "desPercent": current.get('destructionPercentage'),
+                            "attacks": current.get('attacks'),
+                            "isWinning": current.get('isWinning'),
+                            "opponentTag": opp_tag,
+                            "opponentStars": opponent.get('stars'),
+                            "opponentDesPercent": opponent.get('destructionPercentage'),
+                            "opponentAttacks": opponent.get('attacks'),
+                            "teamSize": war.get('teamSize'),
+                            # Kiểm tra members là list trước khi xử lý
+                            "members": handle_rounds_clan_player(current.get('members') or [])
+                        }
+
+                    clans_in_round[clan1_tag] = build_clan_dict(clan1_info, clan2_info, clan2_tag)
+                    clans_in_round[clan2_tag] = build_clan_dict(clan2_info, clan1_info, clan1_tag)
+                else:
+                    app.logger.warning(f"Missing tags in war: {war}")
+            except Exception as e:
+                app.logger.error(f"Error processing war: {e}")
+                continue
+        allrounds.append(clans_in_round)
     return allrounds
 
 def process_wl_data(season, data, drive_service):

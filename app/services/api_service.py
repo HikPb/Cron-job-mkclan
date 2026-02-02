@@ -162,17 +162,19 @@ async def fetch_war_log(token, clan_tag, drive_service):
 
         return {"data": final_warlog_list, "last50": new_warlogs}
 
-def process_wldata_and_upload(drive_service):
-    current_time = datetime.datetime.now()
-    season = current_time.strftime('%Y-%m')
+def process_wldata_and_upload(drive_service, season):
+    if not season:
+        current_time = datetime.datetime.now()
+        season = current_time.strftime('%Y-%m')
     wl_file_name = season + '.json'
-    query = f"name='{wl_file_name}' and '{app.config['WL_DRIVE_FOLDER_ID']}' in parents and trashed=false"
-    results = drive_service.service.files().list(q=query,
-                                        spaces='drive',
-                                        fields='files(id, name, createdTime)').execute()
-    existing_files = results.get('files', [])
-    if len(existing_files)>0:
-        return {"info":"Cancel upload, file already exists in directory."}
+    
+    # query = f"name='{wl_file_name}' and '{app.config['WL_DRIVE_FOLDER_ID']}' in parents and trashed=false"
+    # results = drive_service.service.files().list(q=query,
+    #                                     spaces='drive',
+    #                                     fields='files(id, name, createdTime)').execute()
+    # existing_files = results.get('files', [])
+    # if len(existing_files)>0:
+    #     return {"info":"Cancel upload, file already exists in directory."}
     
     try:
         api_url = "https://api.clashofstats.com/clans/2QCV8UJ8Q/cwl/seasons/" + season
